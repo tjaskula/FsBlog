@@ -140,6 +140,23 @@ module BlogPosts =
     Description = "";
 *)"""   title (date.ToString("yyyy-MM-ddThh:mm:ss"))
 
+  let makeDraft concatDraft input =
+    function
+     | "" -> input
+     | draft -> concatDraft input draft
+
+  let draftExtension ext draft =
+    makeDraft (fun e d -> sprintf "%s.%s" d e) ext draft
+
+  let draftTitle title (draft : string) =
+    let upDraft = draft.ToUpper()
+    makeDraft (fun t d -> sprintf "%s-%s" upDraft t) title draft
+
+  let toDraftParam isDraft =
+    match isDraft with
+    | "" -> ""
+    | _ -> "draft"
+
   // Creates a new markdown page.
   let CreateMarkdownPage path title =
 
@@ -162,33 +179,65 @@ module BlogPosts =
     EnsureDirectory(dir)
     File.WriteAllText(filename, (markdownHeader "page" now title))
 
-  /// News up a file at a specified path/filename with initial content generated
-  /// from a header creation function.
-  let CreateFile path createHeader ext title =
+  let getDir path (now:System.DateTime) =
+    Path.Combine([|path;(sprintf "%i" now.Year)|])
 
+  let makeFileName path ext title =
     let append a b = sprintf "%s%s" b a
 
     // Perhaps parametize this and bubble it up as a requirement?
     let now = System.DateTime.Now
 
-    let dir = Path.Combine([|path;(sprintf "%i" now.Year)|])
+    let dir = getDir path now
 
     // Maybe use some kind of url formatting callback?
-    let filename =
-        Regex.Matches(title, @"\w+")
+    Regex.Matches(title, @"\b(?!(?:draft))\w+", RegexOptions.IgnoreCase) // excludes "draft" from filename as it's already in extension
         |> Seq.cast<Match>
         |> Seq.map (fun m -> m.ToString().ToLower())
         |> Seq.fold (fun s m -> (sprintf "%s-%s" s m)) (sprintf "%s/%s" dir (now.ToString("MM-dd")))
         |> append "."
         |> append ext
 
+  /// News up a file at a specified path/filename with initial content generated
+  /// from a header creation function.
+  let CreateFile path createHeader ext title =
+    
+    let now = System.DateTime.Now
+
+    let dir = getDir path now
+
+    let filename = makeFileName path ext title
     EnsureDirectory(dir)
     File.WriteAllText(filename, (createHeader now title))
 
   /// Creates a new blank markdown post.
-  let CreateMarkdownPost path title =
-    CreateFile path (markdownHeader "post") "md" title
+  let CreateMarkdownPost path title isDraft = 
+    let draft = toDraftParam isDraft
+    CreateFile path (markdownHeader "post") (draftExtension "md" draft) (draftTitle title draft)
 
   /// Creates a new blank fsx post.
-  let CreateFsxPost path title =
+  let CreateFsxPost path title = 
     CreateFile path fsxHeader "fsx" title
+
+  /// Undrafts post.
+  let UndraftMarkdownPost path title =
+    let filename = makeFileName path (draftExtension "md" "draft") title
+    let ext = Path.GetExtension(filename).ToLower()
+    let headerRegex, abstractRegex =
+      match ext with
+      | ".fsx" -> scriptHeaderRegex, fsxAbstractRegex
+      | ".md" | ".html" | ".cshtml" -> razorHeaderRegex, mdAbstractRegex
+      | _ -> failwith "File format not supported '%s' !" ext
+    let headerMatches = headerRegex.Match(File.ReadAllText(filename))
+    if not headerMatches.Success then 
+      failwithf "The following source file is missing a header:\n%s" filename  
+
+    let header = headerMatches.Groups.["header"].Value
+    let content = headerMatches.Groups.["content"].Value
+    let abstractMatches = abstractRegex.Match(content)
+    let rawAbstr = abstractMatches.Groups.["abstract"].Value
+
+    printfn "header: %s" header
+    printfn "content: %s" content
+    printfn "rawAbstr: %s" rawAbstr
+    ()

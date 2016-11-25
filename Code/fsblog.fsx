@@ -196,18 +196,27 @@ Target "Preview" (fun _ ->
     Thread.Sleep(-1)
 )
 
-Target "New" (fun _ ->
-    let post, fsx, page =
-        getBuildParam "post",
+Target "New" (fun _ ->       
+    let post, fsx, page, draft = 
+        getBuildParam "post", 
         getBuildParam "fsx",
-        getBuildParam "page"
-
+        getBuildParam "page",
+        getBuildParam "-draft"
+    
     match page, post, fsx with
-    | "", "", "" -> traceError "Please specify either a new 'page', 'post' or 'fsx'."
-    | _, "", ""  -> BlogPosts.CreateMarkdownPage source page
-    | "", _, ""  -> BlogPosts.CreateMarkdownPost blog post
-    | "", "", _  -> BlogPosts.CreateFsxPost blog fsx
+    | "", "", "" -> traceError "Please specify either a new 'page', 'post [-draft]' or 'fsx'."
+    | _, "", ""  -> CreateMarkdownPage source page
+    | "", _, ""  -> CreateMarkdownPost blog post draft
+    | "", "", _  -> CreateFsxPost blog fsx
     | _, _, _    -> traceError "Please specify only one argument, 'post' or 'fsx'."
+)
+
+Target "Undraft" (fun _ ->
+    let post = getBuildParam "post"
+
+    match post with
+    | "" -> traceError "Please specify 'post' to undraft."
+    | _  -> UndraftMarkdownPost blog post
 )
 
 Target "Clean" (fun _ ->
